@@ -1,8 +1,12 @@
 #include <ncurses.h>
+
 #include <sys/types.h>				//for open()
 #include <sys/stat.h>				//for open()
 #include <fcntl.h>					//for open()
-#include <unistd.h>					//for close()
+#include <unistd.h>					//for close(),alarm()
+#include <signal.h>
+#include <sys/signal.h>
+
 #include <string.h>
 #include <stdlib.h>
 
@@ -97,11 +101,11 @@ public:
 
 	ListNode*	initCursor();
 
-	void		movePre();
-	void 		movePre(ListNode*);
+	int 		movePre();
+	int 		movePre(ListNode*);
 
-	void 		moveNext();
-	void 		moveNext(ListNode*);
+	int 		moveNext();
+	int 		moveNext(ListNode*);
 
 	void		insert(char content);							// Insert at current position 
 																// of ptr with auto generated id 
@@ -126,26 +130,36 @@ ListNode* List::initCursor() {
 	return newcursor;
 }
 
-void List::movePre() {
-	if(current_->pre() != NULL)
+int List::movePre() {
+	if(current_->pre() != NULL){
 		current_ = current_->pre();
+		return 1;
+	}
+	return 0;
 }
 
-void List::movePre(ListNode* cur) {
+int List::movePre(ListNode* cur) {
 	if(cur->pre() != NULL) {
 		cur = cur->pre();
+		return 1;
 	}
+	return 0;
 }
 
-void List::moveNext() {
-	if(current_->next() != NULL)
+int List::moveNext() {
+	if(current_->next() != NULL) {
 		current_ = current_->next();
+		return 1;
+	}
+	return 0;
 }
 
-void List::moveNext(ListNode* cur) {
+int List::moveNext(ListNode* cur) {
 	if(cur->next() != NULL) {
 		cur = cur->next();
+		return 1;
 	}
+	return 0;
 }
 
 void List::insert(char content) {
@@ -157,6 +171,10 @@ void List::insert(char content) {
 		current_->next(new ListNode(ListNode::getNextSeqNum(), content, current_,current_->next()));
 		current_ = current_->next();
 		
+		if(current_->next()) {
+			current_->next()->pre(current_);
+		}
+
 		if(current_ == end_) {
 			end_ = current_;
 		}
@@ -185,14 +203,28 @@ void List::backspace() {
 	ListNode* ptr;
 	ptr = current_;
 
-	current_->pre()->next(current_->next());
-	current_->next()->pre(current_->pre());
+	if(current_ != start_){
+		current_->pre()->next(current_->next());
 
-	if(current_ == end_){
-		current_ = end_ = current_->pre();
+		if(current_->next()){
+			current_->next()->pre(current_->pre());
+		}
+
+		if(current_ == end_){
+			current_ = end_ = current_->pre();
+		}
+		else{
+			current_ = current_->pre();
+		}	
 	}
-	else{
-		current_ = current_->pre();
+	else {
+		if(start_->next()) {
+			start_ = start_->next();
+		}
+		if(start_) {
+			start_->pre(NULL);
+		}
+		current_ = start_;
 	}
 
 	delete ptr;
@@ -332,18 +364,38 @@ int main(int argc, char *argv[])
 	while(1) {
 		hit = getch();
 
+		switch(hit) {
+			case KEY_LEFT:
+							if(parselist.movePre()) {
+								interface.mvCursorLeft();
+							}
+							break;
+			case KEY_RIGHT:
+							if(parselist.moveNext()) {
+								interface.mvCursorRight();
+							}
+							break;
+			case KEY_UP:
+							break;
+			case KEY_DOWN:
+							break;
+			case KEY_BACKSPACE:
+							parselist.backspace();
+							interface.mvCursorLeft();
+							interface.repaint(parselist);
+							break;
+			default:			
+						parselist.insert(hit);
+						interface.mvCursorRight();
+						interface.repaint(parselist);
+		}
 		if(hit == KEY_LEFT) {
-			parselist.movePre();
-			interface.mvCursorLeft();
+			
 		}
 		else if(hit == KEY_RIGHT) {
-			parselist.moveNext();
-			interface.mvCursorRight();
+			
 		}
 		else {
-			parselist.insert(hit);
-			interface.mvCursorRight();
-			interface.repaint(parselist);
 		}
 	}
 
