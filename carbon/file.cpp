@@ -10,6 +10,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <pthread.h>
+
 using namespace std;
 
 #define MAX_USERS 10				// can be a multiple of 10 only
@@ -98,6 +100,7 @@ private:
 
 public:
 	List();
+	List(const List &obj);
 
 	ListNode*	initCursor();
 
@@ -122,6 +125,34 @@ List::List() {
 	start_ = NULL;
 	current_ = '\0';
 	end_ = NULL; 
+}
+
+List::List(const List &obj) {
+	this->start_ = NULL;
+	this->current_ = NULL;
+	this->end_ = NULL;
+
+	ListNode *ptr;
+
+	for(ptr = obj.start_; ptr != NULL; ptr = ptr->next()) {
+		if(!this->start_) {
+			this->start_ = new ListNode(ptr->id(), ptr->content());
+			this->current_ = this->end_ = this->start_;
+		}
+		else {
+			this->current_->next(new ListNode(ptr->id(), ptr->content(), this->current_,this->current_->next()));
+			this->current_ = this->current_->next();
+
+			// after moving to the inserted node, check its next
+			if(this->current_->next()) {
+				this->current_->next()->pre(this->current_);
+			}
+
+			if(this->current_ == this->end_) {
+				this->end_ = this->current_;
+			}
+		}
+	}
 }
 
 ListNode* List::initCursor() {
@@ -314,11 +345,58 @@ void UI::mvCursorRight() {
 	move(y, x+1);
 }
 
-int main(int argc, char *argv[])
-{	
 
+// Defined Global Because of its need in signal handler
+// signal handler are just like instuction to kernel to 
+// jump to a specific location when such and such thing happens
+// http://stackoverflow.com/a/6970238
+
+// struct to properly handle the alarm signal for autosave functionality
+struct arguements {
+	
+	List *parselist;
+	pthread_t *autosave_thread;
+	char *filename;
+} arg_workaround;
+
+// autosave thread
+void* autoSave(void*) {
+	List savelist = *arg_workaround.parselist;
 	int fd;
 
+	if((fd = open(arg_workaround.filename, O_WRONLY | O_TRUNC))==-1) {
+		pthread_exit(NULL);
+	}
+
+	ListNode *cur = savelist.initCursor();
+	char buf;
+
+	do {
+		
+		buf = cur->content();
+		write(fd, &buf, sizeof(char));
+		cur = cur->next();
+	} while(cur);
+
+	alarm(2);
+	pthread_exit(NULL);
+}
+
+//called every 2 secs
+void autoSaveAlarm(int) {
+	int rc;
+	rc = pthread_create(arg_workaround.autosave_thread, NULL, autoSave, NULL);
+	if(rc) {
+		perror("Autosave Failure");
+		exit(1);
+	}
+}
+
+
+
+int main(int argc, char *argv[])
+{	
+	int fd;
 	if(argc < 3) {
 		perror("Usage: <file.out> <open/create> <filename>");
 		exit(0);
@@ -342,9 +420,16 @@ int main(int argc, char *argv[])
 		perror("Invalid command");
 		exit(1);
 	}
-
+	
 	List parselist;
 	UI interface;
+	pthread_t autosave_thread;
+
+	// arg_workaround initialisation
+	arg_workaround.parselist = &parselist;
+	arg_workaround.autosave_thread = &autosave_thread;
+	arg_workaround.filename = argv[2];
+	
 	int n;
 	char *buf;
 	buf = new char;
@@ -354,6 +439,9 @@ int main(int argc, char *argv[])
 		parselist.insert(*buf);
 	}
 	close(fd);		// reading from file is completed
+
+	signal(SIGALRM, autoSaveAlarm);
+	alarm(2);		// auto save in every 2 seconds
 
 	interface.init();
 	interface.paint(parselist);	   
@@ -402,5 +490,5 @@ int main(int argc, char *argv[])
 	interface.close();
 	
 	close(fd);
-	return 0;
+	pthread_exit(NULL);
 }
